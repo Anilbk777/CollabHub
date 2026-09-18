@@ -23,11 +23,17 @@ export const RegisterUserSchema = z.object({
         .regex(/\d/, "Password must contain at least one number")
         .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character")
         .regex(/^\S*$/, "Password must not contain spaces"),
+});
 
-    avatarUrl: z
+export const LoginUserSchema = z.object({
+    email: z
         .string()
         .trim()
-        .url("Invalid URL format")
-        .optional()
-        .or(z.literal("")), // Allows empty string fallback from forms
+        .email("Invalid email address")
+        .max(255, "Email is too long")
+        .toLowerCase(),
+
+    password: z
+        .string()
+        .trim()
 });

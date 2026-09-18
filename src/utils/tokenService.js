@@ -16,7 +16,15 @@ const generateRefreshToken = (userId) => {
     );
 }
 
+const generateToken = (userId) => {
+    const accessToken = generateAccessToken(userId);
+    const refreshToken = generateRefreshToken(userId);
+
+    return { accessToken, refreshToken };
+}
+
 export {
     generateAccessToken,
-    generateRefreshToken
+    generateRefreshToken,
+    generateToken
 }

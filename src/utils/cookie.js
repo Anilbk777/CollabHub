@@ -13,14 +13,14 @@ const setCookie = (res, { accessToken, refreshToken }) => {
     })
     res.cookie('refreshToken', refreshToken, {
         ...cookieOpts,
-        path: "/api/v1/auth/refresh",
+        path: "/api/v1/auth",
         maxAge: 7 * 24 * 60 * 60 * 1000
     })
 }
 
 const clearCookie = (res) => {
     res.clearCookie('accessToken', cookieOpts);
-    res.clearCookie('refreshToken', { ...cookieOpts, path: "/api/v1/auth/refresh" });
+    res.clearCookie('refreshToken', { ...cookieOpts, path: "/api/v1/auth" });
 }
 
 export {

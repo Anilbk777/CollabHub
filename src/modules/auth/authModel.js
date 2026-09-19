@@ -11,3 +11,16 @@ export const getUserByEmail = async (email) => {
         where: { email }
     })
 }
+
+export const updateRefreshToken = async (userId, data) => {
+    return await prisma.user.update({
+        where: { id: userId },
+        data
+    });
+}
+
+export const findSessionByToken = async (token) => {
+    return await prisma.user.findFirst({
+        where: { refreshToken: token }
+    })
+}

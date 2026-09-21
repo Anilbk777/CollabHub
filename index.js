@@ -2,12 +2,14 @@ import 'dotenv/config';
 import { testDB } from "./src/config/dbConfig.js";
 import app from "./app.js";
 import logger from "./src/utils/logger.js";
+import initCloudinary from "./src/config/cloudinaryConfig.js";
 
 const PORT = process.env.PORT || 3000;
 
 const startServer = async () => {
     try {
         await testDB();
+        initCloudinary();
 
         app.listen(PORT, () => {
             logger.info(`Server running on port ${PORT}`);

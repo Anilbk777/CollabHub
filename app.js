@@ -13,7 +13,7 @@ app.use(cors({
     credentials: true
 }));
 app.use(express.json({ limit: "16kb" }));
-app.use(express.urlencoded({ extended: true, limit: "16kb" }));
+app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 const apiPrefix = "/api/v1";
@@ -25,8 +25,16 @@ app.get("/", (req, res) => {
     res.status(200).json({ success: true, statusCode: 200, message: "Welcome to CollabHub" });
 })
 
+app.head("/health", (req, res) => {
+    res.status(200).json({ success: true, statusCode: 200, message: "OK" });
+})
+
 // Health Check Route
 app.get("/health", (req, res) => {
+    res.status(200).json({ success: true, statusCode: 200, message: "OK" });
+})
+
+app.head("/health", (req, res) => {
     res.status(200).json({ success: true, statusCode: 200, message: "OK" });
 })
 

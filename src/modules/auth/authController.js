@@ -1,7 +1,15 @@
 import ApiResponse from "../../utils/apiResponse.js";
 import asyncHandler from "../../utils/asyncHandler.js";
 import { setCookie, clearCookie } from "../../utils/cookie.js";
-import { registerUser, loginUser, refreshTokenService, logoutService } from "./authService.js";
+import {
+    registerUser,
+    loginUser,
+    refreshTokenService,
+    logoutService,
+    meService,
+    updateAvatarService,
+    deleteAvatarService
+} from "./authService.js";
 
 export const registerUserController = asyncHandler(async (req, res) => {
     const result = await registerUser(req.body);
@@ -25,5 +33,20 @@ export const logoutController = asyncHandler(async (req, res) => {
     const incomingRefreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
     const result = await logoutService(incomingRefreshToken);
     clearCookie(res);
-    ApiResponse(res, result);   
+    ApiResponse(res, result);
+})
+
+export const meController = asyncHandler(async (req, res) => {
+    const result = await meService(req.user);
+    ApiResponse(res, result);
+})
+
+export const uploadAvatarController = asyncHandler(async (req, res) => {
+    const result = await updateAvatarService(req.userId, req.file);
+    ApiResponse(res, result);
+})
+
+export const deleteAvatarController = asyncHandler(async (req, res) => {
+    const result = await deleteAvatarService(req.user);
+    ApiResponse(res, result);
 })

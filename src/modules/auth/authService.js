@@ -1,10 +1,19 @@
-import { createUser, getUserByEmail, findSessionByToken, updateRefreshToken } from "./authModel.js";
 import AppError from "../../utils/AppError.js";
 import constants from "../../utils/constants.js";
 import logger from "../../utils/logger.js";
 import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
 import { generateToken } from "../../utils/tokenService.js";
+import { uploadOnCloudinary, deleteFromCloudinary } from "../../utils/imageUpload.js";
+import { validateFile } from "../../middlewares/imageUploadMiddleware.js";
+import {
+    createUser,
+    getUserByEmail,
+    findSessionByToken,
+    updateRefreshToken,
+    getUserById,
+    updateAvatar,
+    deleteAvatar
+} from "./authModel.js";
 
 const registerUser = async (userData) => {
     logger.info(`Attempting to register user with email: ${userData.email}`);
@@ -113,10 +122,58 @@ const logoutService = async (incomingRefreshToken) => {
 
 }
 
+const meService = async (user) => {
+    return {
+        statusCode: 200,
+        message: "User fetched successfully",
+        data: user
+    }
+}
+
+const updateAvatarService = async (userId, file) => {
+    logger.info({ userId }, "Attempting to upload avatar");
+    if (!file) {
+        throw new AppError("No file uploaded", constants.BadRequest);
+    }
+    const isAllowed = await validateFile(file.buffer);
+    if (!isAllowed) {
+        throw new AppError("File type not allowed", constants.BadRequest);
+    }
+    const url = await uploadOnCloudinary(userId, file.buffer);
+    const updateAvatarResult = await updateAvatar(userId, url);
+    logger.info({ userId }, "Avatar uploaded successfully.");
+    return {
+        statusCode: 200,
+        message: "Avatar uploaded successfully",
+        data: {
+            avatarUrl: updateAvatarResult.avatarUrl
+        }
+    }
+}
+
+const deleteAvatarService = async (user) => {
+    logger.info({ userId: user.id }, "Attempting to delete avatar");
+    if (!user.avatarUrl) {
+        throw new AppError("No avatar to delete", constants.BadRequest);
+    }
+    await deleteFromCloudinary(user.id);
+    const deleteResult = await deleteAvatar(user.id);
+    logger.info({ userId: user.id }, "Avatar deleted successfully.");
+    return {
+        statusCode: 200,
+        message: "Avatar deleted successfully",
+        data: {
+            avatarUrl: deleteResult.avatarUrl
+        }
+    }
+}
 
 export {
     registerUser,
     loginUser,
     refreshTokenService,
-    logoutService
+    logoutService,
+    meService,
+    updateAvatarService,
+    deleteAvatarService
 }

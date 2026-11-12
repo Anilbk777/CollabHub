@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const RegisterUserSchema = z.object({
-    name: z
+    fullName: z
         .string()
         .trim()
         .min(2, "Name must be at least 2 characters")
@@ -23,6 +23,7 @@ export const RegisterUserSchema = z.object({
         .regex(/\d/, "Password must contain at least one number")
         .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character")
         .regex(/^\S*$/, "Password must not contain spaces"),
+
 });
 
 export const LoginUserSchema = z.object({

@@ -1,26 +1,26 @@
-import AppError from "../utils/AppError.js";
+import AppError from "../utils/appError.js";
 import constants from "../utils/constants.js";
 import jwt from "jsonwebtoken";
 import { getUserById } from "../modules/auth/authModel.js";
 
-
 const authenticateUser = async (req, res, next) => {
     try {
-        const token = req.cookies.accessToken;
+        const token = req.cookies?.accessToken || req.headers.authorization?.replace("Bearer ", "");
         if (!token) {
-            throw new AppError("Unauthorized", constants.Unauthorized);
+            return next(new AppError("Unauthorized access", constants.Unauthorized));
         }
         const decoded = jwt.verify(token, process.env.JWT_ACCESS_TOKEN_SECRET);
         const user = await getUserById(decoded.id);
-        if (!user) {
-            throw new AppError("Unauthorized", constants.Unauthorized);
+        if (!user || !user.isActive) {
+            return next(new AppError("Unauthorized or inactive account", constants.Unauthorized));
         }
-        req.userId = decoded.id;
+        req.schoolId = req.headers["x-school-id"] || null;
+        req.userId = user.id;
         req.user = user;
         next();
     } catch (error) {
-        throw new AppError("Unauthorized", constants.Unauthorized);
+        return next(new AppError("Unauthorized access", constants.Unauthorized));
     }
 }
 
-export default authenticateUser
+export default authenticateUser;

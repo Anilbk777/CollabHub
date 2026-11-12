@@ -2,22 +2,22 @@ import AppError from "../../utils/AppError.js";
 import constants from "../../utils/constants.js";
 import logger from "../../utils/logger.js";
 import bcrypt from "bcrypt";
-import { generateToken } from "../../utils/tokenService.js";
+import { generateToken, hashToken } from "../../utils/tokenService.js";
 import { uploadOnCloudinary, deleteFromCloudinary } from "../../utils/imageUpload.js";
 import { validateFile } from "../../middlewares/imageUploadMiddleware.js";
 import {
     createUser,
     getUserByEmail,
     findSessionByToken,
-    updateRefreshToken,
-    getUserById,
+    createRefreshToken,
+    revokeRefreshToken,
     updateAvatar,
     deleteAvatar
 } from "./authModel.js";
 
 const registerUser = async (userData) => {
-    logger.info(`Attempting to register user with email: ${userData.email}`);
-    const { email, password } = userData;
+    const { email, password, fullName } = userData;
+    logger.info({ email }, "Attempting to register user");
 
     const existingUser = await getUserByEmail(email);
     if (existingUser) {
@@ -26,112 +26,143 @@ const registerUser = async (userData) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUserData = {
-        ...userData,
-        password: hashedPassword
+        fullName,
+        email,
+        password: hashedPassword,
     };
     const user = await createUser(newUserData);
-    logger.info(`User registered successfully with email: ${userData.email}`);
+    logger.info({ id: user.id, email: user.email }, "User registered successfully");
     return {
         statusCode: 201,
         message: "User registered successfully",
         data: {
             id: user.id,
-            name: user.name,
+            fullName: user.fullName,
             email: user.email,
+            role: user.role,
+            isActive: user.isActive,
             createdAt: user.createdAt,
         }
     }
-
 }
 
 const loginUser = async (body) => {
-    logger.info(`Attempting to login user with email: ${body.email}`);
     const { email, password } = body;
+    logger.info({ email }, "Attempting to login user");
+
     const existingUser = await getUserByEmail(email);
     if (!existingUser) {
         throw new AppError("Invalid email or password", constants.Unauthorized);
     }
+
+    if (!existingUser.isActive) {
+        throw new AppError("Your account has been deactivated. Please contact support.", constants.Forbidden);
+    }
+
     const isPasswordValid = await bcrypt.compare(password, existingUser.password);
     if (!isPasswordValid) {
         throw new AppError("Invalid email or password", constants.Unauthorized);
     }
-    const { accessToken, hashedRefreshToken, refreshExpiresAt } = generateToken(existingUser.id);
-    await updateRefreshToken(existingUser.id, { refreshToken: hashedRefreshToken, refreshExpiresAt });
-    logger.info(`User logged in successfully with email: ${email}`);
+
+    const { accessToken, refreshToken, hashedRefreshToken, refreshExpiresAt } = generateToken(existingUser);
+
+    await createRefreshToken({
+        userId: existingUser.id,
+        tokenHash: hashedRefreshToken,
+        expiresAt: refreshExpiresAt
+    });
+
+    logger.info({ userId: existingUser.id, email: existingUser.email }, "User logged in successfully");
     return {
         statusCode: 200,
         message: "User logged in successfully",
         data: {
             accessToken,
-            refreshToken: hashedRefreshToken,
+            refreshToken,
             user: {
                 id: existingUser.id,
-                name: existingUser.name,
-                email: existingUser.email
+                fullName: existingUser.fullName,
+                email: existingUser.email,
+                role: existingUser.role,
+                schoolId: existingUser.schoolId
             }
         }
     }
-
 }
 
 const refreshTokenService = async (incomingRefreshToken) => {
-    logger.info("Getting a new access and refresh token started.", incomingRefreshToken)
+    logger.info("Refreshing access token");
 
     if (!incomingRefreshToken) {
-        throw new AppError("Refresh token missing", constants.NotFound);
+        throw new AppError("Refresh token missing", constants.BadRequest);
     }
-    const session = await findSessionByToken(incomingRefreshToken);
 
-    if (!session) {
-        throw new AppError("Invalid refresh token", constants.Unauthorized);
+    const hashedIncoming = hashToken(incomingRefreshToken);
+    const session = await findSessionByToken(hashedIncoming);
+
+    if (!session || session.revoked) {
+        throw new AppError("Invalid or revoked refresh token", constants.Unauthorized);
     }
-    if (session.refreshExpiresAt && session.refreshExpiresAt.getTime() < Date.now()) {
+
+    if (session.expiresAt && session.expiresAt.getTime() < Date.now()) {
         throw new AppError("Refresh token expired. Please log in again.", constants.Unauthorized);
     }
 
-    const { accessToken, hashedRefreshToken: newHashedRefreshToken, refreshExpiresAt } = generateToken(session.id);
-    await updateRefreshToken(session.id, { refreshToken: newHashedRefreshToken, refreshExpiresAt });
-    logger.info({ userId: session.id, }, "New access and refresh token generated successfully.")
+    if (!session.user || !session.user.isActive) {
+        throw new AppError("User account is inactive", constants.Forbidden);
+    }
+
+    // Revoke old session
+    await revokeRefreshToken(hashedIncoming);
+
+    // Generate new token pair
+    const { accessToken, refreshToken: newRefreshToken, hashedRefreshToken: newHashedToken, refreshExpiresAt } = generateToken(session.user);
+
+    // Save new session
+    await createRefreshToken({
+        userId: session.user.id,
+        tokenHash: newHashedToken,
+        expiresAt: refreshExpiresAt
+    });
+
+    logger.info({ userId: session.user.id }, "New access and refresh token generated successfully.");
 
     return {
         statusCode: 200,
-        message: "New Access and Refresh token generated successful",
+        message: "New Access and Refresh token generated successfully",
         data: {
             accessToken,
-            refreshToken: newHashedRefreshToken
+            refreshToken: newRefreshToken
         }
     }
 }
 
 const logoutService = async (incomingRefreshToken) => {
-    logger.info(`Attempting to logout with refresh token`);
+    logger.info(`Attempting to logout`);
     if (!incomingRefreshToken) {
-        throw new AppError("Refresh token missing", constants.NotFound);
+        throw new AppError("Refresh token missing", constants.BadRequest);
     }
-    const session = await findSessionByToken(incomingRefreshToken);
-    if (!session || (session.refreshExpiresAt && Date.now() > session.refreshExpiresAt.getTime())) {
-        throw new AppError("Invalid or expired refresh token", constants.Unauthorized);
-    }
-    await updateRefreshToken(session.id, { refreshToken: null, refreshExpiresAt: null });
 
-    logger.info({ userId: session.id, }, "User logged out successfully.")
+    const hashedIncoming = hashToken(incomingRefreshToken);
+    await revokeRefreshToken(hashedIncoming);
+
+    logger.info("User logged out successfully.");
     return {
         statusCode: 200,
         message: "User logged out successfully"
     }
-
 }
 
 const meService = async (user) => {
     return {
         statusCode: 200,
-        message: "User fetched successfully",
+        message: "User profile fetched successfully",
         data: user
     }
 }
 
 const updateAvatarService = async (userId, file) => {
-    logger.info({ userId }, "Attempting to upload avatar");
+    logger.info({ userId }, "Attempting to upload profile image");
     if (!file) {
         throw new AppError("No file uploaded", constants.BadRequest);
     }
@@ -141,29 +172,29 @@ const updateAvatarService = async (userId, file) => {
     }
     const url = await uploadOnCloudinary(userId, file.buffer);
     const updateAvatarResult = await updateAvatar(userId, url);
-    logger.info({ userId }, "Avatar uploaded successfully.");
+    logger.info({ userId }, "Profile image uploaded successfully.");
     return {
         statusCode: 200,
-        message: "Avatar uploaded successfully",
+        message: "Profile image uploaded successfully",
         data: {
-            avatarUrl: updateAvatarResult.avatarUrl
+            profileImg: updateAvatarResult.profileImg
         }
     }
 }
 
 const deleteAvatarService = async (user) => {
-    logger.info({ userId: user.id }, "Attempting to delete avatar");
-    if (!user.avatarUrl) {
-        throw new AppError("No avatar to delete", constants.BadRequest);
+    logger.info({ userId: user.id }, "Attempting to delete profile image");
+    if (!user.profileImg) {
+        throw new AppError("No profile image to delete", constants.BadRequest);
     }
     await deleteFromCloudinary(user.id);
     const deleteResult = await deleteAvatar(user.id);
-    logger.info({ userId: user.id }, "Avatar deleted successfully.");
+    logger.info({ userId: user.id }, "Profile image deleted successfully.");
     return {
         statusCode: 200,
-        message: "Avatar deleted successfully",
+        message: "Profile image deleted successfully",
         data: {
-            avatarUrl: deleteResult.avatarUrl
+            profileImg: deleteResult.profileImg
         }
     }
 }
